@@ -1,5 +1,7 @@
 # AutoGen MCP Server
 
+[![smithery badge](https://smithery.ai/badge/@DynamicEndpoints/autogen_mcp)](https://smithery.ai/server/@DynamicEndpoints/autogen_mcp)
+
 An MCP server that provides integration with Microsoft's AutoGen framework, enabling multi-agent conversations through a standardized interface. This server allows you to create and manage AI agents that can collaborate and solve problems through natural language interactions.
 
 ## Features
@@ -13,6 +15,15 @@ An MCP server that provides integration with Microsoft's AutoGen framework, enab
 
 ## Installation
 
+### Installing via Smithery
+
+To install AutoGen Server for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@DynamicEndpoints/autogen_mcp):
+
+```bash
+npx -y @smithery/cli install @DynamicEndpoints/autogen_mcp --client claude
+```
+
+### Manual Installation
 1. Clone the repository:
 ```bash
 git clone https://github.com/yourusername/autogen-mcp.git
