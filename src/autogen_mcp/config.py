@@ -7,7 +7,8 @@ from typing import Any, Dict, Optional
 class AgentConfig:
     """Configuration for an AutoGen agent."""
     name: str
-    type: str  # 'assistant' or 'user'
+    type: str = "assistant"  # 'assistant' or 'user'
+    role: str = "assistant"  # For compatibility
     description: str = ""
     system_message: str = ""
     llm_config: Optional[Dict[str, Any]] = None

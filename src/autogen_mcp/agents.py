@@ -51,9 +51,29 @@ class AgentManager:
         self._agents[config.name] = agent
         return agent
 
+    def add_agent(self, name: str, agent: ConversableAgent) -> None:
+        """Add an agent to the manager."""
+        self._agents[name] = agent
+
     def get_agent(self, name: str) -> Optional[ConversableAgent]:
         """Get an agent by name."""
         return self._agents.get(name)
+
+    def get_all_agents(self) -> Dict[str, ConversableAgent]:
+        """Get all agents."""
+        return self._agents.copy()
+
+    def clear_all_agents(self) -> None:
+        """Clear all agents."""
+        self._agents.clear()
+
+    def get_agent_count(self) -> int:
+        """Get the number of managed agents."""
+        return len(self._agents)
+
+    def agent_exists(self, name: str) -> bool:
+        """Check if an agent exists."""
+        return name in self._agents
 
     def list_agents(self) -> List[str]:
         """List all agent names."""

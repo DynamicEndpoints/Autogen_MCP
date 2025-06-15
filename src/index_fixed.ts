@@ -10,16 +10,12 @@ import {
   GetPromptRequestSchema,
   ListResourcesRequestSchema,
   ReadResourceRequestSchema,
+  ListResourceTemplatesRequestSchema,
   SubscribeRequestSchema,
   UnsubscribeRequestSchema,
-  ResourceUpdatedNotificationSchema,
-  PromptListChangedNotificationSchema,
-  ToolListChangedNotificationSchema,
-  ProgressNotificationSchema,
-  LoggingLevelSchema,
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
-import express, { Application, Request, Response } from 'express';
+import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -39,14 +35,13 @@ interface TransportConfig {
 
 class EnhancedAutoGenServer {
   private server: Server;
-  private pythonPath: string;  private expressApp?: Application;
+  private pythonPath: string;
+  private expressApp?: express.Application;
   private httpServer?: ReturnType<typeof createServer>;
   private sseTransports: Map<string, SSEServerTransport> = new Map();
   private subscribers: Set<string> = new Set();
   private progressTokens: Map<string, string> = new Map();
   private lastResourceUpdate: number = Date.now();
-  private lastPromptUpdate: number = Date.now();
-  private lastToolUpdate: number = Date.now();
 
   constructor() {
     this.server = new Server(
@@ -64,24 +59,16 @@ class EnhancedAutoGenServer {
           },
           logging: {},
         },
-        instructions: 'Enhanced AutoGen MCP Server with SSE support, real-time updates, and comprehensive MCP protocol implementation including streaming, subscriptions, progress notifications, and advanced workflow management.',
+        instructions: 'Enhanced AutoGen MCP Server with SSE support, real-time updates, and comprehensive MCP protocol implementation.',
       }
     );
 
     this.pythonPath = process.env.PYTHON_PATH || 'python';
-
-    // Set up request handlers
     this.setupHandlers();
 
-    // Error handling
     this.server.onerror = (error) => console.error('[MCP Error]', error);
     
-    // Handle graceful shutdown
     process.on('SIGINT', async () => {
-      await this.cleanup();
-      process.exit(0);
-    });
-    process.on('SIGTERM', async () => {
       await this.cleanup();
       process.exit(0);
     });
@@ -90,23 +77,19 @@ class EnhancedAutoGenServer {
   private async cleanup(): Promise<void> {
     console.error('Shutting down Enhanced AutoGen MCP Server...');
     
-    // Close all SSE transports
     for (const transport of this.sseTransports.values()) {
       await transport.close();
     }
     this.sseTransports.clear();
     
-    // Close HTTP server
     if (this.httpServer) {
       this.httpServer.close();
     }
     
-    // Close MCP server
     await this.server.close();
   }
 
   private setupHandlers(): void {
-    // Enhanced prompts with all capabilities
     const PROMPTS = {
       'autogen-workflow': {
         name: 'autogen-workflow',
@@ -132,11 +115,6 @@ class EnhancedAutoGenServer {
             description: 'Enable real-time streaming of agent conversations',
             required: false,
           },
-          {
-            name: 'quality_checks',
-            description: 'Enable multi-stage quality validation',
-            required: false,
-          },
         ],
       },
       'code-review': {
@@ -150,22 +128,12 @@ class EnhancedAutoGenServer {
           },
           {
             name: 'language',
-            description: 'Programming language (auto-detected if not specified)',
-            required: false,
-          },
-          {
-            name: 'focus_areas',
-            description: 'Specific areas to focus on (security, performance, readability, testing)',
+            description: 'Programming language',
             required: false,
           },
           {
             name: 'severity_level',
             description: 'Review severity (basic, thorough, comprehensive)',
-            required: false,
-          },
-          {
-            name: 'live_feedback',
-            description: 'Enable real-time streaming feedback',
             required: false,
           },
         ],
@@ -181,91 +149,13 @@ class EnhancedAutoGenServer {
           },
           {
             name: 'depth',
-            description: 'Analysis depth (basic, detailed, comprehensive, exhaustive)',
-            required: false,
-          },
-          {
-            name: 'sources',
-            description: 'Preferred research sources',
-            required: false,
-          },
-          {
-            name: 'output_format',
-            description: 'Output format (report, presentation, analysis, summary)',
-            required: false,
-          },
-          {
-            name: 'real_time_updates',
-            description: 'Enable streaming progress updates',
-            required: false,
-          },
-        ],
-      },
-      'creative-collaboration': {
-        name: 'creative-collaboration',
-        description: 'Set up creative agents for collaborative content generation',
-        arguments: [
-          {
-            name: 'project_type',
-            description: 'Type of creative project (story, article, script, marketing)',
-            required: true,
-          },
-          {
-            name: 'tone',
-            description: 'Desired tone and style',
-            required: false,
-          },
-          {
-            name: 'target_audience',
-            description: 'Target audience description',
-            required: false,
-          },
-          {
-            name: 'length',
-            description: 'Desired length or scope',
-            required: false,
-          },
-          {
-            name: 'collaborative_editing',
-            description: 'Enable real-time collaborative editing',
-            required: false,
-          },
-        ],
-      },
-      'problem-solving': {
-        name: 'problem-solving',
-        description: 'Create a problem-solving team with specialized agents',
-        arguments: [
-          {
-            name: 'problem_statement',
-            description: 'Clear description of the problem to solve',
-            required: true,
-          },
-          {
-            name: 'domain',
-            description: 'Problem domain (technical, business, creative, analytical)',
-            required: false,
-          },
-          {
-            name: 'constraints',
-            description: 'Any constraints or limitations',
-            required: false,
-          },
-          {
-            name: 'solution_format',
-            description: 'Desired solution format',
-            required: false,
-          },
-          {
-            name: 'brainstorming_mode',
-            description: 'Enable real-time brainstorming with live updates',
+            description: 'Analysis depth (basic, detailed, comprehensive)',
             required: false,
           },
         ],
       },
     };
 
-    // Enhanced resource templates
     const RESOURCE_TEMPLATES = {
       'agent-performance': {
         uriTemplate: 'autogen://agents/{agent_id}/performance',
@@ -279,41 +169,21 @@ class EnhancedAutoGenServer {
         description: 'Real-time workflow execution status and progress',
         mimeType: 'application/json',
       },
-      'conversation-stream': {
-        uriTemplate: 'autogen://conversations/{conversation_id}/stream',
-        name: 'Conversation Stream',
-        description: 'Live conversation updates and message flow',
-        mimeType: 'text/event-stream',
-      },
-      'agent-memory': {
-        uriTemplate: 'autogen://agents/{agent_id}/memory',
-        name: 'Agent Memory State',
-        description: 'Current memory and knowledge state of agents',
-        mimeType: 'application/json',
-      },
-      'system-metrics': {
-        uriTemplate: 'autogen://system/metrics',
-        name: 'System Metrics',
-        description: 'Real-time system performance and resource usage',
-        mimeType: 'application/json',
-      },
     };
 
-    // List available prompts
     this.server.setRequestHandler(ListPromptsRequestSchema, async () => ({
       prompts: Object.values(PROMPTS),
     }));
 
-    // Get specific prompt with enhanced template generation
     this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
       const promptName = request.params.name;
       const args = request.params.arguments || {};
 
       if (promptName === 'autogen-workflow') {
-        const taskDescription = args.task_description;
-        const agentCount = args.agent_count || '3';        const workflowType = args.workflow_type || 'group_chat';
-        const streaming = args.streaming === 'true' || Boolean(args.streaming);
-        const qualityChecks = args.quality_checks === 'true' || Boolean(args.quality_checks);
+        const taskDescription = args.task_description || '';
+        const agentCount = args.agent_count || '3';
+        const workflowType = args.workflow_type || 'group_chat';
+        const streaming = Boolean(args.streaming);
         
         return {
           messages: [
@@ -327,67 +197,44 @@ Configuration:
 - Agents: ${agentCount} specialized agents
 - Workflow Type: ${workflowType}
 - Real-time Streaming: ${streaming ? 'enabled' : 'disabled'}
-- Quality Validation: ${qualityChecks ? 'enabled' : 'disabled'}
 
-Requirements:
-1. Create distinct agents with specialized roles and expertise
-2. Configure intelligent agent interactions and routing
-3. Set up workflow execution with error handling
-4. ${streaming ? 'Enable real-time progress streaming' : 'Use standard execution mode'}
-5. ${qualityChecks ? 'Implement multi-stage quality validation' : 'Use basic validation'}
-
-Please provide a complete workflow configuration with agent definitions, interaction patterns, and execution flow.`,
+Please provide a complete workflow configuration.`,
               },
             },
           ],
         };
       }
 
-      // Similar implementations for other prompts...
       throw new McpError(ErrorCode.InvalidRequest, `Unknown prompt: ${promptName}`);
     });
 
-    // List available resources with enhanced capabilities
     this.server.setRequestHandler(ListResourcesRequestSchema, async () => ({
       resources: [
         {
           uri: 'autogen://agents/list',
           name: 'Active Agents Registry',
-          description: 'Real-time list of all active AutoGen agents with status and capabilities',
-          mimeType: 'application/json',
-        },
-        {
-          uri: 'autogen://workflows/templates',
-          name: 'Workflow Templates Library',
-          description: 'Comprehensive collection of workflow templates and configurations',
-          mimeType: 'application/json',
-        },
-        {
-          uri: 'autogen://conversations/active',
-          name: 'Active Conversations',
-          description: 'Currently running conversations and their real-time status',
+          description: 'Real-time list of all active AutoGen agents',
           mimeType: 'application/json',
         },
         {
           uri: 'autogen://system/metrics',
           name: 'System Performance Metrics',
-          description: 'Real-time system performance, resource usage, and health metrics',
-          mimeType: 'application/json',
-        },
-        {
-          uri: 'autogen://config/current',
-          name: 'Current Configuration',
-          description: 'Current server configuration and capability settings',
+          description: 'Real-time system performance and health metrics',
           mimeType: 'application/json',
         },
         {
           uri: 'autogen://subscriptions/list',
           name: 'Active Subscriptions',
-          description: 'List of active resource subscriptions and their status',
+          description: 'List of active resource subscriptions',
           mimeType: 'application/json',
         },
       ],
-    }));    // Enhanced resource reading with real-time data
+    }));
+
+    this.server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
+      resourceTemplates: Object.values(RESOURCE_TEMPLATES),
+    }));
+
     this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
       const uri = request.params.uri;
 
@@ -400,10 +247,6 @@ Please provide a complete workflow configuration with agent definitions, interac
           activeSubscriptions: this.subscribers.size,
           progressTokens: this.progressTokens.size,
           lastResourceUpdate: new Date(this.lastResourceUpdate).toISOString(),
-          performance: {
-            eventLoopDelay: process.hrtime(),
-            cpuUsage: process.cpuUsage(),
-          },
         };
 
         return {
@@ -417,7 +260,26 @@ Please provide a complete workflow configuration with agent definitions, interac
         };
       }
 
-      // Delegate other resources to Python handler
+      if (uri === 'autogen://subscriptions/list') {
+        const subscriptions = {
+          active: Array.from(this.subscribers),
+          count: this.subscribers.size,
+          sseTransports: this.sseTransports.size,
+          lastUpdated: new Date().toISOString(),
+        };
+
+        return {
+          contents: [
+            {
+              uri,
+              mimeType: 'application/json',
+              text: JSON.stringify(subscriptions, null, 2),
+            },
+          ],
+        };
+      }
+
+      // Delegate to Python handler
       const result = await this.callPythonHandler('get_resource', { uri });
       return {
         contents: [
@@ -428,14 +290,12 @@ Please provide a complete workflow configuration with agent definitions, interac
           },
         ],
       };
-    });    // Resource subscription management
+    });
+
     this.server.setRequestHandler(SubscribeRequestSchema, async (request) => {
       const uri = request.params.uri;
       this.subscribers.add(uri);
-      
-      // Send immediate update for subscribed resource
       await this.notifyResourceUpdate(uri);
-      
       return {};
     });
 
@@ -445,7 +305,6 @@ Please provide a complete workflow configuration with agent definitions, interac
       return {};
     });
 
-    // Enhanced tools with progress tracking
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
         {
@@ -455,11 +314,10 @@ Please provide a complete workflow configuration with agent definitions, interac
             type: 'object',
             properties: {
               workflow_name: { type: 'string', description: 'Name for the workflow' },
-              workflow_type: { type: 'string', description: 'Type of workflow (sequential, group_chat, hierarchical, swarm, streaming)' },
+              workflow_type: { type: 'string', description: 'Type of workflow' },
               agents: { type: 'array', description: 'List of agent configurations' },
-              streaming_config: { type: 'object', description: 'Streaming configuration and settings' },
-              progress_token: { type: 'string', description: 'Token for progress notifications' },
-              quality_gates: { type: 'boolean', description: 'Enable quality validation checkpoints' },
+              streaming: { type: 'boolean', description: 'Enable streaming' },
+              progress_token: { type: 'string', description: 'Progress token' },
             },
             required: ['workflow_name', 'workflow_type', 'agents'],
           },
@@ -474,26 +332,10 @@ Please provide a complete workflow configuration with agent definitions, interac
               message: { type: 'string', description: 'Initial message' },
               streaming: { type: 'boolean', description: 'Enable real-time streaming' },
               progress_token: { type: 'string', description: 'Token for progress notifications' },
-              max_turns: { type: 'number', description: 'Maximum conversation turns' },
-              session_id: { type: 'string', description: 'Session identifier for tracking' },
             },
             required: ['agent_name', 'message'],
           },
         },
-        {
-          name: 'broadcast_resource_update',
-          description: 'Broadcast a resource update to all subscribers',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              uri: { type: 'string', description: 'Resource URI that was updated' },
-              change_type: { type: 'string', description: 'Type of change (created, updated, deleted)' },
-              data: { type: 'object', description: 'Updated resource data' },
-            },
-            required: ['uri', 'change_type'],
-          },
-        },
-        // Include all original tools
         {
           name: 'create_agent',
           description: 'Create a new AutoGen agent with enhanced capabilities',
@@ -501,11 +343,9 @@ Please provide a complete workflow configuration with agent definitions, interac
             type: 'object',
             properties: {
               name: { type: 'string', description: 'Unique name for the agent' },
-              type: { type: 'string', description: 'Agent type (assistant, user_proxy, conversable, teachable, retrievable)' },
-              system_message: { type: 'string', description: 'System message defining agent behavior' },
-              llm_config: { type: 'object', description: 'LLM configuration for the agent' },
-              streaming: { type: 'boolean', description: 'Enable real-time streaming for this agent' },
-              progress_token: { type: 'string', description: 'Token for progress notifications' },
+              type: { type: 'string', description: 'Agent type' },
+              system_message: { type: 'string', description: 'System message' },
+              llm_config: { type: 'object', description: 'LLM configuration' },
             },
             required: ['name', 'type'],
           },
@@ -516,48 +356,37 @@ Please provide a complete workflow configuration with agent definitions, interac
           inputSchema: {
             type: 'object',
             properties: {
-              workflow_name: { type: 'string', description: 'Name of the workflow to execute' },
-              input_data: { type: 'object', description: 'Input data for the workflow' },
-              streaming: { type: 'boolean', description: 'Enable real-time streaming' },
-              progress_token: { type: 'string', description: 'Token for progress notifications' },
-              output_format: { type: 'string', description: 'Desired output format' },
-              quality_checks: { type: 'boolean', description: 'Enable quality validation' },
+              workflow_name: { type: 'string', description: 'Workflow name' },
+              input_data: { type: 'object', description: 'Input data' },
+              streaming: { type: 'boolean', description: 'Enable streaming' },
             },
             required: ['workflow_name', 'input_data'],
           },
         },
       ],
-    }));    // Enhanced tool call handling with progress notifications
+    }));
+
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const toolName = request.params.name;
       const args = request.params.arguments || {};
-      const progressToken = args.progress_token as string | undefined;
+      const progressToken = typeof args.progress_token === 'string' ? args.progress_token : undefined;
 
       try {
-        // Send initial progress notification
         if (progressToken) {
           this.progressTokens.set(progressToken, toolName);
           await this.sendProgressNotification(progressToken, 0, `Starting ${toolName}...`);
         }
 
-        // Handle streaming-specific tools
         if (toolName === 'create_streaming_workflow' || toolName === 'start_streaming_chat') {
           return await this.handleStreamingTool(toolName, args, progressToken);
         }
 
-        if (toolName === 'broadcast_resource_update') {
-          return await this.handleResourceBroadcast(args);
-        }
-
-        // Send progress update
         if (progressToken) {
           await this.sendProgressNotification(progressToken, 50, `Processing ${toolName}...`);
         }
 
-        // Call Python handler for other tools
         const result = await this.callPythonHandler(toolName, args);
 
-        // Send completion notification
         if (progressToken) {
           await this.sendProgressNotification(progressToken, 100, `Completed ${toolName}`);
           this.progressTokens.delete(progressToken);
@@ -565,8 +394,8 @@ Please provide a complete workflow configuration with agent definitions, interac
 
         return result;
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
         if (progressToken) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
           await this.sendProgressNotification(progressToken, -1, `Error in ${toolName}: ${errorMessage}`);
           this.progressTokens.delete(progressToken);
         }
@@ -583,18 +412,21 @@ Please provide a complete workflow configuration with agent definitions, interac
     const result = await this.callPythonHandler(toolName, args);
 
     if (args.streaming && this.sseTransports.size > 0) {
-      // Send streaming updates to connected clients
       for (const transport of this.sseTransports.values()) {
-        await transport.send({
-          jsonrpc: '2.0',
-          method: 'notifications/progress',
-          params: {
-            progressToken: progressToken || 'streaming',
-            progress: 75,
-            message: 'Streaming updates...',
-            data: result,
-          },
-        });
+        try {
+          await transport.send({
+            jsonrpc: '2.0',
+            method: 'notifications/progress',
+            params: {
+              progressToken: progressToken || 'streaming',
+              progress: 75,
+              message: 'Streaming updates...',
+              data: result,
+            },
+          });
+        } catch (error) {
+          console.error('Error sending streaming update:', error);
+        }
       }
     }
 
@@ -603,21 +435,6 @@ Please provide a complete workflow configuration with agent definitions, interac
     }
 
     return result;
-  }
-
-  private async handleResourceBroadcast(args: any): Promise<any> {
-    const { uri, change_type, data } = args;
-    
-    await this.notifyResourceUpdate(uri, data);
-    this.lastResourceUpdate = Date.now();
-    
-    return {
-      success: true,
-      uri,
-      change_type,
-      subscribers: this.subscribers.size,
-      timestamp: new Date().toISOString(),
-    };
   }
 
   private async sendProgressNotification(progressToken: string, progress: number, message: string): Promise<void> {
@@ -648,7 +465,7 @@ Please provide a complete workflow configuration with agent definitions, interac
             method: 'notifications/resource_updated',
             params: {
               uri,
-              data: data || await this.getResourceData(uri),
+              data: data || { updated: new Date().toISOString() },
               timestamp: new Date().toISOString(),
             },
           });
@@ -656,28 +473,6 @@ Please provide a complete workflow configuration with agent definitions, interac
           console.error('Error sending resource update notification:', error);
         }
       }
-    }
-  }
-  private async getResourceData(uri: string): Promise<any> {
-    try {
-      // For system metrics, return directly
-      if (uri === 'autogen://system/metrics') {
-        return {
-          timestamp: new Date().toISOString(),
-          uptime: process.uptime(),
-          memory: process.memoryUsage(),
-          sseConnections: this.sseTransports.size,
-          activeSubscriptions: this.subscribers.size,
-          progressTokens: this.progressTokens.size,
-        };
-      }
-      
-      // For other resources, delegate to Python handler
-      const result = await this.callPythonHandler('get_resource', { uri });
-      return result;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      return { error: errorMessage };
     }
   }
 
@@ -729,7 +524,6 @@ Please provide a complete workflow configuration with agent definitions, interac
     
     this.expressApp = express();
     
-    // Security middleware
     this.expressApp.use(helmet({
       contentSecurityPolicy: {
         directives: {
@@ -741,7 +535,6 @@ Please provide a complete workflow configuration with agent definitions, interac
       },
     }));
     
-    // CORS configuration
     this.expressApp.use(cors({
       origin: true,
       credentials: true,
@@ -749,18 +542,16 @@ Please provide a complete workflow configuration with agent definitions, interac
       allowedHeaders: ['Content-Type', 'Authorization'],
     }));
     
-    // Rate limiting
     const limiter = rateLimit({
-      windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 1000, // limit each IP to 1000 requests per windowMs
+      windowMs: 15 * 60 * 1000,
+      max: 1000,
       message: 'Too many requests from this IP',
     });
     this.expressApp.use(limiter);
     
     this.expressApp.use(express.json({ limit: '10mb' }));
     
-    // Health check endpoint
-    this.expressApp.get('/health', (req, res) => {
+    this.expressApp.get('/health', (_req, res) => {
       res.json({
         status: 'healthy',
         timestamp: new Date().toISOString(),
@@ -771,7 +562,6 @@ Please provide a complete workflow configuration with agent definitions, interac
       });
     });
     
-    // SSE endpoint for MCP communication
     this.expressApp.get('/sse', async (req, res) => {
       const sessionId = req.query.sessionId as string || `session_${Date.now()}`;
       
@@ -798,7 +588,7 @@ Please provide a complete workflow configuration with agent definitions, interac
         res.status(500).json({ error: 'Failed to establish SSE connection' });
       }
     });
-      // POST endpoint for MCP messages
+    
     this.expressApp.post('/message', async (req, res) => {
       const sessionId = req.query.sessionId as string;
       
@@ -817,8 +607,7 @@ Please provide a complete workflow configuration with agent definitions, interac
       }
     });
     
-    // Static homepage
-    this.expressApp.get('/', (req, res) => {
+    this.expressApp.get('/', (_req, res) => {
       res.send(`
         <!DOCTYPE html>
         <html>
@@ -887,7 +676,6 @@ Please provide a complete workflow configuration with agent definitions, interac
   }
 }
 
-// CLI argument parsing
 function parseArgs(): TransportConfig {
   const args = process.argv.slice(2);
   const config: TransportConfig = { type: 'stdio' };
@@ -913,7 +701,6 @@ function parseArgs(): TransportConfig {
   return config;
 }
 
-// Main execution
 async function main() {
   const config = parseArgs();
   const server = new EnhancedAutoGenServer();

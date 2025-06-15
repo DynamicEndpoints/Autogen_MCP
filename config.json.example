@@ -1,15 +1,74 @@
 {
+  "name": "autogen-mcp-server",
+  "version": "0.2.0",
+  "description": "Enhanced AutoGen MCP Server with latest features",
   "llm_config": {
     "config_list": [
       {
-        "model": "gpt-4",
-        "api_key": "your-openai-api-key"
+        "model": "gpt-4o",
+        "api_key": "your-openai-api-key-here"
+      },
+      {
+        "model": "gpt-4o-mini",
+        "api_key": "your-openai-api-key-here"
       }
     ],
-    "temperature": 0
+    "temperature": 0.7,
+    "timeout": 60
   },
   "code_execution_config": {
-    "work_dir": "workspace",
-    "use_docker": false
+    "work_dir": "coding",
+    "use_docker": false,
+    "timeout": 60,
+    "last_n_messages": 3
+  },
+  "enhanced_features": {
+    "prompts": {
+      "enabled": true,
+      "templates": [
+        "autogen-workflow",
+        "code-review", 
+        "research-analysis"
+      ]
+    },
+    "resources": {
+      "enabled": true,
+      "auto_refresh": true,
+      "cache_duration": 300
+    },
+    "workflows": {
+      "enabled": true,
+      "quality_checks": true,
+      "default_output_format": "json"
+    },
+    "agent_types": [
+      "assistant",
+      "user_proxy", 
+      "conversable",
+      "teachable",
+      "retrievable"
+    ]
+  },
+  "advanced_settings": {
+    "speaker_selection_methods": [
+      "auto",
+      "manual", 
+      "random",
+      "round_robin"
+    ],
+    "summary_methods": [
+      "last_msg",
+      "reflection_with_llm"
+    ],
+    "memory_management": {
+      "enabled": true,
+      "persistence": true,
+      "cleanup_interval": 3600
+    },
+    "teachability": {
+      "enabled": true,
+      "memory_path": "./agent_memory",
+      "learning_rate": 0.1
+    }
   }
 }

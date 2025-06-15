@@ -9,16 +9,10 @@ from dotenv import load_dotenv
 import autogen
 from autogen import (
     Agent, AssistantAgent, UserProxyAgent, GroupChat, GroupChatManager,
-    ConversableAgent
+    ConversableAgent, TeachableAgent, RetrieveUserProxyAgent
 )
-
-try:
-    from autogen import TeachableAgent, RetrieveUserProxyAgent
-except ImportError:
-    # Fallback for older versions
-    TeachableAgent = None
-    RetrieveUserProxyAgent = None
-
+from autogen.agentchat.contrib.multimodal_conversable_agent import MultimodalConversableAgent
+from autogen.agentchat.contrib.society_of_mind_agent import SocietyOfMindAgent
 import mcp.types as types
 from mcp import server
 
@@ -68,9 +62,7 @@ class EnhancedAutoGenServer:
             "prompts": True,
             "resources": True,
             "sampling": False  # Can be enabled if needed
-        }
-
-    async def handle_tool_call(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        }    async def handle_tool_call(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Handle tool calls with enhanced AutoGen features."""
         try:
             if tool_name == "create_agent":
@@ -133,14 +125,14 @@ class EnhancedAutoGenServer:
                     llm_config=llm_config,
                     human_input_mode=human_input_mode,
                 )
-            elif agent_type == "teachable" and TeachableAgent:
+            elif agent_type == "teachable":
                 agent = TeachableAgent(
                     name=name,
                     system_message=system_message,
                     llm_config=llm_config,
                     teach_config=teachability_config,
                 )
-            elif agent_type == "retrievable" and RetrieveUserProxyAgent:
+            elif agent_type == "retrievable":
                 agent = RetrieveUserProxyAgent(
                     name=name,
                     system_message=system_message,
@@ -148,13 +140,12 @@ class EnhancedAutoGenServer:
                     retrieve_config=args.get("retrieve_config", {}),
                 )
             else:
-                return {"error": f"Unknown or unsupported agent type: {agent_type}"}
+                return {"error": f"Unknown agent type: {agent_type}"}
 
             # Register tools if provided
             if tools:
                 for tool in tools:
-                    if hasattr(agent, 'register_for_execution'):
-                        agent.register_for_execution(name=tool["name"])(tool["function"])
+                    agent.register_for_execution(name=tool["name"])(tool["function"])
 
             self.agent_manager.add_agent(name, agent)
             
@@ -230,10 +221,8 @@ class EnhancedAutoGenServer:
                 return {"error": "One or both agents not found"}
 
             if clear_history:
-                if hasattr(initiator, 'clear_history'):
-                    initiator.clear_history()
-                if hasattr(responder, 'clear_history'):
-                    responder.clear_history()
+                initiator.clear_history()
+                responder.clear_history()
 
             # Execute the chat
             chat_result = initiator.initiate_chat(
@@ -249,16 +238,16 @@ class EnhancedAutoGenServer:
                 "initiator": initiator_name,
                 "responder": responder_name,
                 "initial_message": message,
-                "result": str(chat_result),
+                "result": chat_result,
                 "turns": max_turns
             }
             self.chat_history.append(chat_record)
             
             return {
                 "success": True,
-                "chat_result": str(chat_result),
-                "summary": getattr(chat_result, 'summary', "Chat completed"),
-                "cost": getattr(chat_result, 'cost', None)
+                "chat_result": chat_result,
+                "summary": chat_result.summary if hasattr(chat_result, 'summary') else "Chat completed",
+                "cost": chat_result.cost if hasattr(chat_result, 'cost') else None
             }
         except Exception as e:
             return {"error": f"Chat execution failed: {str(e)}"}
@@ -311,14 +300,14 @@ class EnhancedAutoGenServer:
                 "agents": agent_names,
                 "initiator": initiator_name,
                 "initial_message": message,
-                "result": str(chat_result),
+                "result": chat_result,
                 "rounds": max_round
             }
             self.chat_history.append(chat_record)
             
             return {
                 "success": True,
-                "chat_result": str(chat_result),
+                "chat_result": chat_result,
                 "participants": agent_names,
                 "total_messages": len(group_chat.messages)
             }
@@ -346,7 +335,8 @@ class EnhancedAutoGenServer:
                 else:
                     return {"error": f"Secondary agent '{name}' not found"}
 
-            # Implementation for nested chat
+            # Implementation would depend on specific nested chat requirements
+            # This is a simplified version
             nested_results = []
             
             for depth in range(nesting_depth):
@@ -360,7 +350,7 @@ class EnhancedAutoGenServer:
                     nested_results.append({
                         "depth": depth + 1,
                         "secondary_agent": secondary_agent.name,
-                        "result": str(result)
+                        "result": result
                     })
 
             return {
@@ -518,27 +508,6 @@ class EnhancedAutoGenServer:
                     })
                 return {"agents": agent_list}
             
-            elif uri == "autogen://workflows/templates":
-                templates = {
-                    "sequential": {
-                        "description": "Sequential agent workflow",
-                        "agents": ["initiator", "processor", "reviewer"],
-                        "flow": "linear",
-                    },
-                    "group_chat": {
-                        "description": "Group chat with multiple agents",
-                        "agents": ["facilitator", "expert1", "expert2", "critic"],
-                        "flow": "collaborative",
-                    },
-                    "hierarchical": {
-                        "description": "Hierarchical workflow with manager",
-                        "agents": ["manager", "worker1", "worker2", "validator"],
-                        "flow": "top-down",
-                    },
-                    "available_workflows": list(self.workflow_manager._workflow_templates.keys())
-                }
-                return templates
-            
             elif uri == "autogen://chat/history":
                 # Return recent chat history
                 recent_history = self.chat_history[-10:]  # Last 10 chats
@@ -548,7 +517,7 @@ class EnhancedAutoGenServer:
                 return {"content": history_text}
             
             elif uri == "autogen://config/current":
-                                return {
+                return {
                     "llm_config": self.server_config.default_llm_config,
                     "code_execution_config": self.server_config.default_code_execution_config,
                     "capabilities": self.capabilities
@@ -560,110 +529,178 @@ class EnhancedAutoGenServer:
         except Exception as e:
             return {"error": f"Resource retrieval failed: {str(e)}"}
 
-    # MCP-style tool handlers for compatibility
-    async def handle_create_agent(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle create_agent tool call."""
-        return await self._create_agent(arguments)
-    
-    async def handle_delete_agent(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle delete_agent tool call."""
-        agent_name = arguments.get("name")
-        if not agent_name:
-            return {"content": [{"type": "text", "text": "Agent name is required"}]}
-        
-        try:
-            self.agent_manager.agents.pop(agent_name, None)
-            return {"content": [{"type": "text", "text": f"Agent {agent_name} deleted successfully"}]}
-        except Exception as e:
-            return {"content": [{"type": "text", "text": f"Error deleting agent: {str(e)}"}]}
-    
-    async def handle_list_agents(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle list_agents tool call."""
-        agents = self.agent_manager.list_agents()
-        return {"content": [{"type": "text", "text": f"Available agents: {', '.join(agents)}"}]}
-    
-    async def handle_start_chat(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle start_chat tool call."""
-        return await self._execute_chat(arguments)
-    
-    async def handle_send_message(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle send_message tool call."""
-        agent_name = arguments.get("agent_name")
-        message = arguments.get("message")
-        
-        if not agent_name or not message:
-            return {"content": [{"type": "text", "text": "Agent name and message are required"}]}
-        
-        try:
-            agent = self.agent_manager.get_agent(agent_name)
-            if not agent:
-                return {"content": [{"type": "text", "text": f"Agent {agent_name} not found"}]}
-            
-            # Simulate message sending
-            response = f"Message sent to {agent_name}: {message}"
-            return {"content": [{"type": "text", "text": response}]}
-        except Exception as e:
-            return {"content": [{"type": "text", "text": f"Error sending message: {str(e)}"}]}
-    
-    async def handle_get_chat_history(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle get_chat_history tool call."""
-        history = self.chat_history[-10:]  # Last 10 chats
-        history_text = "\n".join([f"[{chat['timestamp']}] {chat['initial_message'][:100]}..." for chat in history])
-        return {"content": [{"type": "text", "text": history_text or "No chat history available"}]}
-    
-    async def handle_create_group_chat(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle create_group_chat tool call."""
-        return await self._execute_group_chat(arguments)
-    
-    async def handle_execute_workflow(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle execute_workflow tool call."""
-        return await self._execute_workflow(arguments)
-    
-    async def handle_teach_agent(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle teach_agent tool call."""
-        return await self._configure_teachability(arguments)
-    
-    async def handle_save_conversation(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle save_conversation tool call."""
-        conversation_id = arguments.get("conversation_id", "default")
-        conversation_data = arguments.get("conversation_data", {})
-        
-        try:
-            # Save conversation logic
-            self.resource_cache[f"conversation_{conversation_id}"] = {
-                "id": conversation_id,
-                "data": conversation_data,
-                "timestamp": datetime.now().isoformat()
+        if method == "list_tools":
+            return {
+                "tools": [
+                    {
+                        "name": "create_agent",
+                        "description": "Create a new agent",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "name": {
+                                    "type": "string",
+                                    "description": "Name of the agent"
+                                },
+                                "system_message": {
+                                    "type": "string",
+                                    "description": "System message for the agent"
+                                },
+                                "type": {
+                                    "type": "string",
+                                    "enum": ["assistant", "user_proxy"],
+                                    "description": "Type of agent to create"
+                                }
+                            },
+                            "required": ["name", "system_message", "type"]
+                        }
+                    },
+                    {
+                        "name": "execute_chat",
+                        "description": "Execute a chat between two agents",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "initiator": {
+                                    "type": "string",
+                                    "description": "Name of the initiating agent"
+                                },
+                                "responder": {
+                                    "type": "string",
+                                    "description": "Name of the responding agent"
+                                },
+                                "message": {
+                                    "type": "string",
+                                    "description": "Initial message to start the chat"
+                                }
+                            },
+                            "required": ["initiator", "responder", "message"]
+                        }
+                    },
+                    {
+                        "name": "execute_group_chat",
+                        "description": "Execute a group chat with multiple agents",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "agents": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "List of agent names to participate"
+                                },
+                                "message": {
+                                    "type": "string",
+                                    "description": "Initial message to start the chat"
+                                }
+                            },
+                            "required": ["agents", "message"]
+                        }
+                    }
+                ]
             }
-            return {"content": [{"type": "text", "text": f"Conversation {conversation_id} saved successfully"}]}
-        except Exception as e:
-            return {"content": [{"type": "text", "text": f"Error saving conversation: {str(e)}"}]}
 
+        elif method == "call_tool":
+            tool_name = params.get("name")
+            tool_args = params.get("arguments", {})
+
+            if tool_name == "create_agent":
+                try:
+                    agent_config = AgentConfig(
+                        name=tool_args["name"],
+                        type=tool_args["type"],
+                        system_message=tool_args["system_message"],
+                        llm_config=self.server_config.get_default_llm_config(),
+                        code_execution_config=self.server_config.get_default_code_execution_config() if tool_args["type"] == "assistant" else None
+                    )
+                    agent = self.agent_manager.create_agent(agent_config)
+                    return {
+                        "content": [{
+                            "type": "text",
+                            "text": json.dumps({
+                                "name": agent.name,
+                                "type": tool_args["type"],
+                                "system_message": tool_args["system_message"]
+                            })
+                        }]
+                    }
+                except Exception as e:
+                    return {"error": str(e)}
+
+            elif tool_name == "execute_chat":
+                try:
+                    initiator = self.agent_manager.get_agent(tool_args["initiator"])
+                    responder = self.agent_manager.get_agent(tool_args["responder"])
+
+                    if not initiator or not responder:
+                        return {"error": "One or both agents not found"}
+
+                    initiator.initiate_chat(
+                        responder,
+                        message=tool_args["message"],
+                        silent=True,
+                        cache_seed=None
+                    )
+
+                    return {
+                        "content": [{
+                            "type": "text",
+                            "text": json.dumps({
+                                "initiator": tool_args["initiator"],
+                                "responder": tool_args["responder"],
+                                "messages": initiator.chat_messages[responder]
+                            })
+                        }]
+                    }
+                except Exception as e:
+                    return {"error": str(e)}
+
+            elif tool_name == "execute_group_chat":
+                try:
+                    agents = []
+                    for name in tool_args["agents"]:
+                        agent = self.agent_manager.get_agent(name)
+                        if not agent:
+                            return {"error": f"Agent {name} not found"}
+                        agents.append(agent)
+
+                    group_chat = self.agent_manager.create_group_chat(
+                        agents=agents,
+                        messages=[{"role": "user", "content": tool_args["message"]}],
+                        max_round=10
+                    )
+
+                    manager = GroupChatManager(
+                        groupchat=group_chat,
+                        llm_config=self.server_config.get_default_llm_config()
+                    )
+
+                    manager.initiate_chat(tool_args["message"])
+
+                    return {
+                        "content": [{
+                            "type": "text",
+                            "text": json.dumps({
+                                "agents": tool_args["agents"],
+                                "messages": group_chat.messages
+                            })
+                        }]
+                    }
+                except Exception as e:
+                    return {"error": str(e)}
+
+            return {"error": f"Unknown tool: {tool_name}"}
+
+        return {"error": f"Unknown method: {method}"}
+
+    async def run(self):
+        """Run the server using stdio transport."""
+        async with stdio_server() as (read_stream, write_stream):
+            await self.server.run(read_stream, write_stream)
 
 def main():
-    """Main function for command line execution."""
-    if len(sys.argv) != 3:
-        print(json.dumps({"error": "Usage: python server.py <tool_name> <arguments_json>"}))
-        sys.exit(1)
-    
-    tool_name = sys.argv[1]
-    try:
-        arguments = json.loads(sys.argv[2])
-    except json.JSONDecodeError:
-        print(json.dumps({"error": "Invalid JSON arguments"}))
-        sys.exit(1)
-    
-    # Create server instance
-    server = EnhancedAutoGenServer()
-    
-    # Run the tool call
-    try:
-        result = asyncio.run(server.handle_tool_call(tool_name, arguments))
-        print(json.dumps(result))
-    except Exception as e:
-        print(json.dumps({"error": str(e)}))
-        sys.exit(1)
-
+    """Run the server."""
+    server = AutoGenServer()
+    anyio.run(server.run)
 
 if __name__ == "__main__":
     main()
