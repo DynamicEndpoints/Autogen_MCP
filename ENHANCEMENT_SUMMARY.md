@@ -8,7 +8,7 @@ Successfully updated and enhanced the AutoGen MCP server with the latest feature
 
 ### 1. **Latest Dependencies & Versions**
 - **MCP SDK**: Updated to v1.12.3 (latest)
-- **AutoGen**: Updated to pyautogen v0.9.0 (latest)
+- **AutoGen**: Updated to ag2 v0.9.0 (latest)
 - **MCP Python**: Updated to v1.9.4 (latest)
 - All supporting dependencies updated to compatible versions
 
