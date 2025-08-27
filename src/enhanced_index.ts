@@ -373,11 +373,87 @@ async function main() {
   const port = portArg ? parseInt(portArg.split('=')[1]) : parseInt(process.env.PORT || '3001');
   
   if (transport === 'http') {
-    // Run in HTTP mode
+    // Setup MCP server for HTTP mode - using express as the HTTP interface
+    const openaiApiKey = process.env.OPENAI_API_KEY;
+    const pythonPath = process.env.PYTHON_PATH || "python";
+    const enableStreaming = process.env.ENABLE_STREAMING !== 'false';
+
+    const server = createServer({
+      config: {
+        openaiApiKey,
+        pythonPath,
+        workingDirectory: "./workspace",
+        enableStreaming,
+        maxAgents: 10,
+      },
+    });
+
+    // Add MCP capabilities endpoint
+    app.get('/mcp/capabilities', async (req: Request, res: Response) => {
+      try {
+        // Return server capabilities
+        res.json({
+          capabilities: {
+            tools: { listChanged: true },
+            resources: { subscribe: true, listChanged: true },
+            prompts: { listChanged: true },
+            logging: {}
+          },
+          protocolVersion: "2024-11-05",
+          serverInfo: {
+            name: "enhanced-autogen-mcp",
+            version: "0.3.0"
+          }
+        });
+      } catch (error) {
+        res.status(500).json({ error: "Failed to get capabilities" });
+      }
+    });
+
+    // Add MCP tools endpoint
+    app.get('/mcp/tools', async (req: Request, res: Response) => {
+      try {
+        const tools = [
+          {
+            name: "create_autogen_agent",
+            description: "Create a new AutoGen agent using the latest Core architecture",
+            inputSchema: {
+              type: "object",
+              properties: {
+                name: { type: "string", description: "Unique name for the agent" },
+                type: { type: "string", enum: ["assistant", "user_proxy", "conversable", "workbench"] },
+                system_message: { type: "string", description: "System message for the agent" }
+              },
+              required: ["name", "type"]
+            }
+          },
+          {
+            name: "execute_autogen_workflow",
+            description: "Execute a multi-agent workflow using latest AutoGen patterns",
+            inputSchema: {
+              type: "object",
+              properties: {
+                workflow_type: { type: "string", enum: ["sequential", "group_chat", "handoffs"] },
+                agents: { type: "array", description: "Agents to include" },
+                task: { type: "string", description: "Task description" }
+              },
+              required: ["workflow_type", "agents", "task"]
+            }
+          }
+        ];
+        res.json({ tools });
+      } catch (error) {
+        res.status(500).json({ error: "Failed to get tools" });
+      }
+    });
+
+    // Start HTTP server
     app.listen(port, () => {
       console.log(`Enhanced AutoGen MCP Server listening on port ${port}`);
       console.log(`HTTP endpoint: http://localhost:${port}/mcp`);
       console.log(`Health check: http://localhost:${port}/health`);
+      console.log(`Capabilities: http://localhost:${port}/mcp/capabilities`);
+      console.log(`Tools: http://localhost:${port}/mcp/tools`);
     });
   } else {
     // Optional: if you need backward compatibility, add stdio transport
