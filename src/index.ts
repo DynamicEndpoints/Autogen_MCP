@@ -819,6 +819,18 @@ export default function createMCPServer({
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
       {
+        name: "count_characters",
+        description: "Count occurrences of a specific character in text",
+        inputSchema: {
+          type: "object",
+          properties: {
+            text: { type: "string", description: "The text to search in" },
+            character: { type: "string", description: "The character to count (single character)" },
+          },
+          required: ["text", "character"],
+        },
+      },
+      {
         name: "create_agent",
         description: "Create a new AutoGen agent with enhanced capabilities",
         inputSchema: {
@@ -838,6 +850,31 @@ export default function createMCPServer({
 
   // Add a simple tool handler as example
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    if (request.params.name === "count_characters") {
+      // Validate server access
+      if (!validateServerAccess(config.serverToken)) {
+        throw new Error("Server access validation failed. Please provide a valid serverToken.");
+      }
+      
+      const { text, character } = request.params.arguments as { text: string; character: string };
+      
+      // Apply user preferences from config
+      const searchText = config.caseSensitive ? text : text.toLowerCase();
+      const searchChar = config.caseSensitive ? character : character.toLowerCase();
+      
+      // Count occurrences of the specific character
+      const count = searchText.split(searchChar).length - 1;
+
+      return {
+        content: [
+          { 
+            type: "text", 
+            text: `The character "${character}" appears ${count} times in the text.` 
+          }
+        ],
+      };
+    }
+
     if (request.params.name === "create_agent") {
       // Validate server access
       if (!validateServerAccess(config.serverToken)) {
