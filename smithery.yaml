@@ -1,18 +1,22 @@
 # Smithery configuration file: https://smithery.ai/docs/config#smitheryyaml
 
+runtime: "container"
+build:
+  dockerfile: "Dockerfile"           # Path to your Dockerfile
+  dockerBuildPath: "."               # Docker build context
 startCommand:
-  type: stdio
-  configSchema:
-    # JSON Schema defining the configuration options for the MCP.
+  type: "http"
+  # configSchema and exampleConfig are optional - remove if no configuration needed
+  configSchema:                      # Optional: Define configuration schema
     type: object
     properties:
-      openaiApiKey:
+      serverToken:
         type: string
-        default: ""
-        description: OpenAI API key for LLM usage
-  commandFunction:
-    # A JS function that produces the CLI command based on the given config to start the MCP on stdio.
-    |-
-    (config) => ({ command: 'node', args: ['build/index.js'], env: { OPENAI_API_KEY: config.openaiApiKey || '' } })
-  exampleConfig:
-    openaiApiKey: your-openai-api-key
+        description: Server access token
+      caseSensitive:
+        type: boolean
+        description: Whether character matching should be case sensitive
+        default: false
+  exampleConfig:                     # Optional: Example configuration
+    serverToken: "your-server-token"
+    caseSensitive: false

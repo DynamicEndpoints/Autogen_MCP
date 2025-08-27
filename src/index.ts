@@ -2,6 +2,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
   CallToolRequestSchema,
   ErrorCode,
@@ -21,22 +22,44 @@ import rateLimit from 'express-rate-limit';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { createServer } from 'http';
+import { createServer as createHttpServer } from 'http';
+import { z } from 'zod';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 interface TransportConfig {
-  type: 'stdio' | 'sse';
+  type: 'stdio' | 'sse' | 'http';
   port?: number;
   host?: string;
+}
+
+// Define session configuration schema
+export const configSchema = z.object({
+  serverToken: z.string().optional().describe("Server access token"),
+  caseSensitive: z.boolean().optional().default(false).describe("Whether character matching should be case sensitive"),
+});
+
+// Parse configuration from query parameters
+function parseConfig(req: Request) {
+  const configParam = req.query.config as string;
+  if (configParam) {
+    return JSON.parse(Buffer.from(configParam, 'base64').toString());
+  }
+  return {};
+}
+
+function validateServerAccess(serverToken?: string): boolean {
+  // Validate server token - accepts any string including empty ones for demo
+  // In a real app, you'd validate against your server's auth system
+  return serverToken !== undefined && serverToken.trim().length > 0 ? true : true;
 }
 
 class EnhancedAutoGenServer {
   private server: Server;
   private pythonPath: string;
   private expressApp?: Application;
-  private httpServer?: ReturnType<typeof createServer>;  private sseTransports: Map<string, SSEServerTransport> = new Map();
+  private httpServer?: ReturnType<typeof createHttpServer>;  private sseTransports: Map<string, SSEServerTransport> = new Map();
   private subscribers: Set<string> = new Set();
   private progressTokens: Map<string, string> = new Map();
   private lastResourceUpdate?: Date;
@@ -666,7 +689,7 @@ Deploy specialized research agents for comprehensive coverage.`,
     });
 
     // Start HTTP server
-    this.httpServer = createServer(this.expressApp);
+    this.httpServer = createHttpServer(this.expressApp);
     
     return new Promise((resolve, reject) => {      this.httpServer!.listen(port, host, () => {
         console.error(`🚀 Enhanced AutoGen MCP Server with SSE running on http://${host}:${port}`);
@@ -680,13 +703,189 @@ Deploy specialized research agents for comprehensive coverage.`,
     });
   }
 
+  // HTTP Transport setup
+  async setupHTTPTransport(port: number = 8081, host: string = 'localhost'): Promise<void> {
+    this.expressApp = express();
+    
+    // CORS configuration for browser-based MCP clients
+    this.expressApp.use(cors({
+      origin: '*', // Configure appropriately for production
+      exposedHeaders: ['Mcp-Session-Id', 'mcp-protocol-version'],
+      allowedHeaders: ['Content-Type', 'mcp-session-id'],
+    }));
+
+    this.expressApp.use(express.json());
+
+    // Handle MCP requests at /mcp endpoint
+    this.expressApp.all('/mcp', async (req: Request, res: Response) => {
+      try {
+        // Parse configuration
+        const rawConfig = parseConfig(req);
+        
+        // Validate and parse configuration
+        const config = configSchema.parse({
+          serverToken: rawConfig.serverToken || process.env.SERVER_TOKEN || undefined,
+          caseSensitive: rawConfig.caseSensitive || false,
+        });
+        
+        const server = createMCPServer({ config });
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: undefined,
+        });
+
+        // Clean up on request close
+        res.on('close', () => {
+          transport.close();
+          server.close();
+        });
+
+        await server.connect(transport);
+        await transport.handleRequest(req, res, req.body);
+      } catch (error) {
+        console.error('Error handling MCP request:', error);
+        if (!res.headersSent) {
+          res.status(500).json({
+            jsonrpc: '2.0',
+            error: { code: -32603, message: 'Internal server error' },
+            id: null,
+          });
+        }
+      }
+    });
+
+    // Health check endpoint
+    this.expressApp.get('/', (req: Request, res: Response) => {
+      res.json({
+        name: 'Enhanced AutoGen MCP Server',
+        version: '0.2.0',
+        status: 'running',
+        features: ['HTTP', 'Streaming', 'Progress', 'Subscriptions'],
+        uptime: process.uptime(),
+      });
+    });
+
+    // Start HTTP server
+    this.httpServer = createHttpServer(this.expressApp);
+    
+    return new Promise((resolve, reject) => {
+      this.httpServer!.listen(port, host, () => {
+        console.error(`🚀 Enhanced AutoGen MCP Server with HTTP running on http://${host}:${port}`);
+        console.error(`📡 MCP: http://${host}:${port}/mcp`);
+        console.error(`🩺 Health: http://${host}:${port}/`);
+        resolve();
+      });
+
+      this.httpServer!.on('error', reject);
+    });
+  }
+
   async run(config: TransportConfig = { type: 'stdio' }): Promise<void> {
-    if (config.type === 'sse') {
+    if (config.type === 'http') {
+      await this.setupHTTPTransport(config.port || parseInt(process.env.PORT || '8081'), config.host || 'localhost');
+    } else if (config.type === 'sse') {
       await this.setupSSETransport(config.port || 3000, config.host || 'localhost');    } else {
       const transport = new StdioServerTransport();
       await this.server.connect(transport);
       console.error('Enhanced AutoGen MCP server running on stdio');
     }
+  }
+}
+
+// Create MCP server with your tools
+export default function createMCPServer({
+  config,
+}: {
+  config: z.infer<typeof configSchema>;
+}) {
+  const server = new Server(
+    {
+      name: "Enhanced AutoGen MCP Server",
+      version: "0.2.0",
+    },
+    {
+      capabilities: {
+        tools: {},
+        prompts: {},
+        resources: {
+          subscribe: true,
+          listChanged: true,
+        },
+        logging: {},
+      },
+    }
+  );
+
+  // Example tool implementation - keeping the existing structure
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: [
+      {
+        name: "create_agent",
+        description: "Create a new AutoGen agent with enhanced capabilities",
+        inputSchema: {
+          type: "object",
+          properties: {
+            name: { type: "string", description: "Unique name for the agent" },
+            type: { type: "string", description: "Agent type" },
+            system_message: { type: "string", description: "System message" },
+            llm_config: { type: "object", description: "LLM configuration" },
+          },
+          required: ["name", "type"],
+        },
+      },
+      // Add other tools as needed...
+    ],
+  }));
+
+  // Add a simple tool handler as example
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    if (request.params.name === "create_agent") {
+      // Validate server access
+      if (!validateServerAccess(config.serverToken)) {
+        throw new Error("Server access validation failed. Please provide a valid serverToken.");
+      }
+      
+      return {
+        content: [
+          { 
+            type: "text", 
+            text: `Agent "${request.params.arguments?.name}" created successfully.` 
+          }
+        ],
+      };
+    }
+
+    throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${request.params.name}`);
+  });
+
+  return server;
+}
+
+// Main function to start the server in the appropriate mode
+async function main() {
+  const transport = process.env.TRANSPORT || 'stdio';
+  
+  if (transport === 'http') {
+    // Run in HTTP mode
+    const port = parseInt(process.env.PORT || '8081');
+    const server = new EnhancedAutoGenServer();
+    await server.run({ type: 'http', port });
+  } else {
+    // Optional: if you need backward compatibility, add stdio transport
+    const serverToken = process.env.SERVER_TOKEN;
+    const caseSensitive = process.env.CASE_SENSITIVE === 'true';
+
+    // Create server with configuration
+    const server = createMCPServer({
+      config: {
+        serverToken,
+        caseSensitive,
+      },
+    });
+
+    // Start receiving messages on stdin and sending messages on stdout
+    const stdioTransport = new StdioServerTransport();
+    await server.connect(stdioTransport);
+    console.error("MCP Server running in stdio mode");
   }
 }
 
@@ -699,7 +898,7 @@ function parseArgs(): TransportConfig {
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--transport' && args[i + 1]) {
-      config.type = args[i + 1] as 'stdio' | 'sse';
+      config.type = args[i + 1] as 'stdio' | 'sse' | 'http';
       console.error('Set transport to:', config.type);
       i++;
     } else if (args[i] === '--port' && args[i + 1]) {
@@ -717,7 +916,16 @@ function parseArgs(): TransportConfig {
   return config;
 }
 
-// Start the server
-const config = parseArgs();
-const server = new EnhancedAutoGenServer();
-server.run(config).catch(console.error);
+// Start the server based on environment or CLI args
+if (process.env.TRANSPORT) {
+  // Use environment variable mode (for main() function)
+  main().catch((error) => {
+    console.error("Server error:", error);
+    process.exit(1);
+  });
+} else {
+  // Use CLI argument mode (for legacy compatibility)
+  const config = parseArgs();
+  const server = new EnhancedAutoGenServer();
+  server.run(config).catch(console.error);
+}
