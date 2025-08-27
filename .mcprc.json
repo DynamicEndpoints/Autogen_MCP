@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "enhanced-autogen": {
+      "command": "node",
+      "args": ["build/enhanced_index.js"],
+      "env": {
+        "OPENAI_API_KEY": ""
+      }
+    }
+  }
+}

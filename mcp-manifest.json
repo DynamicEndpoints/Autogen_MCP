@@ -1,0 +1,232 @@
+{
+  "name": "enhanced-autogen-mcp",
+  "version": "0.3.0",
+  "description": "Enhanced AutoGen MCP Server with modern Core architecture and HTTP transport",
+  "author": "DynamicEndpoints",
+  "homepage": "https://github.com/DynamicEndpoints/Autogen_MCP",
+  "license": "MIT",
+  "mcp": {
+    "server": {
+      "transport": ["stdio", "http"],
+      "capabilities": {
+        "tools": {
+          "listChanged": true
+        },
+        "resources": {
+          "subscribe": true,
+          "listChanged": true
+        },
+        "prompts": {
+          "listChanged": true
+        },
+        "logging": {}
+      },
+      "tools": [
+        {
+          "name": "create_autogen_agent",
+          "description": "Create a new AutoGen agent using the latest Core architecture",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Unique name for the agent"
+              },
+              "type": {
+                "type": "string",
+                "enum": ["assistant", "user_proxy", "conversable", "workbench"],
+                "description": "Type of agent to create"
+              },
+              "system_message": {
+                "type": "string",
+                "description": "System message for the agent"
+              },
+              "model_client": {
+                "type": "object",
+                "description": "Model client configuration"
+              },
+              "tools": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "List of tools to enable"
+              },
+              "streaming": {
+                "type": "boolean",
+                "default": true,
+                "description": "Enable streaming responses"
+              }
+            },
+            "required": ["name", "type"]
+          }
+        },
+        {
+          "name": "execute_autogen_workflow",
+          "description": "Execute a multi-agent workflow using latest AutoGen patterns",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "workflow_type": {
+                "type": "string",
+                "enum": ["sequential", "group_chat", "handoffs", "mixture_of_agents", "reflection"],
+                "description": "Type of workflow pattern"
+              },
+              "agents": {
+                "type": "array",
+                "description": "Agents to include in the workflow"
+              },
+              "task": {
+                "type": "string",
+                "description": "Task description for the workflow"
+              },
+              "max_rounds": {
+                "type": "number",
+                "default": 10,
+                "description": "Maximum conversation rounds"
+              },
+              "streaming": {
+                "type": "boolean",
+                "default": true,
+                "description": "Enable streaming responses"
+              }
+            },
+            "required": ["workflow_type", "agents", "task"]
+          }
+        },
+        {
+          "name": "create_mcp_workbench",
+          "description": "Create an AutoGen workbench with MCP server integration",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "mcp_servers": {
+                "type": "array",
+                "description": "MCP servers to integrate"
+              },
+              "agent_name": {
+                "type": "string",
+                "description": "Name for the workbench agent"
+              },
+              "model": {
+                "type": "string",
+                "default": "gpt-4o",
+                "description": "Model to use for the workbench"
+              }
+            },
+            "required": ["mcp_servers", "agent_name"]
+          }
+        },
+        {
+          "name": "get_agent_status",
+          "description": "Get detailed status and metrics for AutoGen agents",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "agent_name": {
+                "type": "string",
+                "description": "Specific agent name (optional)"
+              },
+              "include_metrics": {
+                "type": "boolean",
+                "default": true,
+                "description": "Include performance metrics"
+              },
+              "include_memory": {
+                "type": "boolean",
+                "default": true,
+                "description": "Include memory information"
+              }
+            }
+          }
+        },
+        {
+          "name": "manage_agent_memory",
+          "description": "Manage agent memory and teachability features",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "agent_name": {
+                "type": "string",
+                "description": "Name of the agent"
+              },
+              "action": {
+                "type": "string",
+                "enum": ["save", "load", "clear", "query", "teach"],
+                "description": "Memory action to perform"
+              },
+              "data": {
+                "description": "Data for the action"
+              },
+              "query": {
+                "type": "string",
+                "description": "Query string for memory search"
+              }
+            },
+            "required": ["agent_name", "action"]
+          }
+        }
+      ],
+      "resources": [
+        {
+          "uri": "autogen://agents/list",
+          "name": "Agent List",
+          "description": "List of all available AutoGen agents",
+          "mimeType": "application/json"
+        },
+        {
+          "uri": "autogen://workflows/templates",
+          "name": "Workflow Templates",
+          "description": "Available workflow templates and patterns",
+          "mimeType": "application/json"
+        },
+        {
+          "uri": "autogen://chat/history",
+          "name": "Chat History",
+          "description": "Recent conversation history",
+          "mimeType": "text/plain"
+        },
+        {
+          "uri": "autogen://config/current",
+          "name": "Current Configuration",
+          "description": "Current server configuration and capabilities",
+          "mimeType": "application/json"
+        }
+      ],
+      "prompts": [
+        {
+          "name": "create_coding_agent",
+          "description": "Create a specialized coding agent with best practices",
+          "arguments": [
+            {
+              "name": "language",
+              "description": "Primary programming language",
+              "required": true
+            },
+            {
+              "name": "expertise_level",
+              "description": "Expertise level (beginner, intermediate, expert)",
+              "required": false
+            }
+          ]
+        },
+        {
+          "name": "setup_code_review_workflow",
+          "description": "Set up a complete code review workflow with multiple agents",
+          "arguments": [
+            {
+              "name": "repository_url",
+              "description": "Repository URL to review",
+              "required": true
+            },
+            {
+              "name": "review_type",
+              "description": "Type of review (security, performance, style, all)",
+              "required": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

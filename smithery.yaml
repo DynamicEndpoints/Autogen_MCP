@@ -3,16 +3,50 @@
 startCommand:
   type: stdio
   configSchema:
-    # JSON Schema defining the configuration options for the MCP.
+    # JSON Schema defining the configuration options for the enhanced AutoGen MCP server.
     type: object
     properties:
       openaiApiKey:
         type: string
         default: ""
         description: OpenAI API key for LLM usage
+      transport:
+        type: string
+        enum: ["stdio", "http"]
+        default: "stdio"
+        description: Transport mode for the MCP server
+      port:
+        type: number
+        default: 3001
+        description: Port for HTTP transport mode
+      pythonPath:
+        type: string
+        default: "python"
+        description: Path to Python executable for AutoGen agents
+      enableStreaming:
+        type: boolean
+        default: true
+        description: Enable streaming responses
+      maxAgents:
+        type: number
+        default: 10
+        description: Maximum number of concurrent agents
   commandFunction:
-    # A JS function that produces the CLI command based on the given config to start the MCP on stdio.
+    # A JS function that produces the CLI command based on the given config to start the enhanced MCP on stdio.
     |-
-    (config) => ({ command: 'node', args: ['build/index.js'], env: { OPENAI_API_KEY: config.openaiApiKey || '' } })
+    (config) => ({ 
+      command: 'node', 
+      args: ['build/enhanced_index.js', '--transport=' + (config.transport || 'stdio'), '--port=' + (config.port || '3001')], 
+      env: { 
+        OPENAI_API_KEY: config.openaiApiKey || '',
+        PYTHON_PATH: config.pythonPath || 'python',
+        ENABLE_STREAMING: config.enableStreaming !== false ? 'true' : 'false',
+        MAX_AGENTS: config.maxAgents || '10'
+      } 
+    })
   exampleConfig:
     openaiApiKey: your-openai-api-key
+    transport: stdio
+    port: 3001
+    enableStreaming: true
+    maxAgents: 10
